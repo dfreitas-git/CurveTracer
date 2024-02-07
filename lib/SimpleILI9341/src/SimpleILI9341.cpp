@@ -1344,7 +1344,8 @@ bool GetTouch(int *x, int *y) {
   SPI.beginTransaction(SPISettings(8000000, MSBFIRST, SPI_MODE0));
   SPI.endTransaction();
 
-  if (z1+z2 > 0x80) {
+  //dlf Touch pad was getting into funky state of returning 4096 with no key presses so trap and ignore it
+  if (z1+z2 != 4096 && z1+z2 > 0x80) {    
     switch (touch_Rotation) {
       case 1:
         *x = round(long(touch_xmax-median_filter(ax))*tft_width / long(touch_xmax-touch_xmin));
@@ -1363,7 +1364,7 @@ bool GetTouch(int *x, int *y) {
         *y = tft_height-round(long(median_filter(ax)-touch_ymin)*tft_height / long(touch_ymax-touch_ymin));
         break;
     }
-    Serial.println("Screen Touched"); //dlf
+  //  Serial.print("Screen Touched "); Serial.println(z1+z2); //dlf
     return true;
   } else {
     *x = 0;
