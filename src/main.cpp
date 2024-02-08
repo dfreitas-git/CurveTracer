@@ -5,10 +5,17 @@ Curve Tracer
 
 Base code from Instructables at https://www.instructables.com/Transistor-Curve-Tracer/
 
-Modified to use Arduino Nano.  Modified power supply.  Now uses two lithium batteries or a 9v power supply.  
+Modified to use Arduino Nano.  Modified power supply.  Now uses two lithium 18650 batteries or a 9v power supply.  
 Generates 3.3v and 12v using buck/boost converters.
 
-dlf  12/9/2023
+Added Grid Setup button to main menu.  This allows the user to set a min/max X-grid (Vce) to zoom in around different
+scan points.  Useful for diodes since they have a very steep Ic and a low threshold voltage
+
+Added separate inc/dec buttons for setting min/max values of base-current, gate-voltage
+
+Added "Test-Znr" button to main menu to initiate test for zener diodes without having to use the serial interface command.
+
+dlf  2/7/2024
 */
 
 #include <Arduino.h>
@@ -149,6 +156,14 @@ const uint8_t bmpNDiodeBig[] PROGMEM = {
   0x02, 0x12, 0x02, 0x12, 0x02, 0x12, 0x02, 0x09
 };
 
+const uint8_t bmpZDiodeBig[] PROGMEM = {
+  20, 128, // width run-length encoded
+  24, 0, // height
+  0x00, 0x09, 0x02, 0x12, 0x02, 0x12, 0x02, 0x12, 0x02, 0x07, 0x02, 0x09, 0x02, 0x07, 0x02, 0x09, 0x02, 0x07, 0x2C, 0x07, 
+  0x02, 0x09, 0x02, 0x06, 0x04, 0x08, 0x02, 0x05, 0x06, 0x0D, 0x08, 0x0B, 0x0A, 0x09, 0x0C, 0x07, 0x0E, 0x05, 0x10, 0x03, 
+  0x12, 0x01, 0x14, 0x09, 0x02, 0x12, 0x02, 0x12, 0x02, 0x12, 0x02, 0x12, 0x02, 0x12, 0x02, 0x09
+};
+
 const uint8_t bmpPDiodeSmall[] PROGMEM = {
   15, 0, // width
   28, 0, // height
@@ -163,6 +178,15 @@ const uint8_t bmpNDiodeSmall[] PROGMEM = {
   28, 0, // height
   0x00, 0xFE, 0x00, 0xFF, 0xF9, 0xFF, 0xF3, 0xFF, 0xE7, 0xFF, 0xCF, 0xFF, 0x9F, 0xFF, 0x3F, 0xFE,
   0x7F, 0xFC, 0xFE, 0x00, 0x04, 0x00, 0x0F, 0xE7, 0xFF, 0x87, 0xFE, 0x07, 0xF8, 0x07, 0xE0, 0x07,
+  0x80, 0x06, 0x00, 0x07, 0xF3, 0xFF, 0xE7, 0xFF, 0xCF, 0xFF, 0x9F, 0xFF, 0x3F, 0xFE, 0x7F, 0xFC,
+  0xFC, 0x01, 0xF8, 0x07, 0xF0
+};
+
+const uint8_t bmpZDiodeSmall[] PROGMEM = {
+  15, 0, // width
+  28, 0, // height
+  0x00, 0xFE, 0x00, 0xFF, 0xF9, 0xFF, 0xF3, 0xFF, 0xE7, 0xFF, 0xCF, 0xFF, 0x9F, 0xFF, 0x3C, 0xFE,
+  0x79, 0xFC, 0xF0, 0x00, 0x00, 0x00, 0x03, 0xE7, 0xE7, 0x87, 0xCE, 0x07, 0xF8, 0x07, 0xE0, 0x07,
   0x80, 0x06, 0x00, 0x07, 0xF3, 0xFF, 0xE7, 0xFF, 0xCF, 0xFF, 0x9F, 0xFF, 0x3F, 0xFE, 0x7F, 0xFC,
   0xFC, 0x01, 0xF8, 0x07, 0xF0
 };
@@ -260,6 +284,9 @@ void DrawKindStr(TkindDUT kind) {
       DrawBitmapMono((TFT_WID - 28) / 2, 25, bmpNJFET, TFT_YELLOW);
       break;
     case tkPDiode:
+      DrawStringAt((TFT_WID - 100) / 2, 15, "Zener Diode", LargeFont, TFT_YELLOW);
+      DrawBitmapMono((TFT_WID - 20) / 2, 25, bmpZDiodeBig, TFT_YELLOW);
+      break;
     case tkNDiode:
       DrawStringAt((TFT_WID - 47) / 2, 15, "Diode", LargeFont, TFT_YELLOW);
       DrawBitmapMono((TFT_WID - 20) / 2, 25, bmpPDiodeBig, TFT_YELLOW);
@@ -424,7 +451,6 @@ void SetDac(uint8_t value, uint8_t cmd) {
 
 void SetDacVcc(uint8_t value, int tDelay) {
   SetDac(value, 0x90);
-  //Serial.print("SetDacVcc: ");Serial.println(value);  //dlf
   if (tDelay > 0)
     delay(tDelay);
 }
@@ -436,7 +462,6 @@ void SetDacVcc(uint8_t value, int tDelay) {
 
 void SetDacBase(uint8_t value, int tDelay) {
   SetDac(value, 0x10);
-  //Serial.print("SetDacBase: ");Serial.println(value);  //dlf
   if (tDelay > 0)
     delay(tDelay);
 }
@@ -451,23 +476,21 @@ void InitGraph(TkindDUT kind, int *XgridMin, int *XgridMax, int *XgridInc) {
 
   ClearDisplay(TFT_BLACK);
   char originX[4];
-  // Add negative sign to the initial X val
+  //dlf. Add negative sign to the initial X val (the user may not always have the origin set to 0V)
   if ((kind == tkPNP || kind == tkPMOSFET || kind == tkPJFET) && *XgridMin != 0) {
     sprintf(originX,"-%dV",*XgridMin);
   }else {
     sprintf(originX,"%dV",*XgridMin);
   }
 
-  //dlf
-  //DrawStringAt(2, TFT_HGT - 4, itoa(*XgridMin,originX,10), SmallFont, TFT_DARKGREY);
   DrawStringAt(2, TFT_HGT - 4, originX, SmallFont, TFT_DARKGREY);
 
   DrawLine(0, 0, 0, TFT_HGT, TFT_DARKGREY);
   DrawLine(0, TFT_HGT - 1, TFT_WID, TFT_HGT - 1, TFT_DARKGREY);
 
   for (ix = *XgridMin + *XgridInc; ix <= *XgridMax; ix += *XgridInc) {
-    //dlf  Width of screen = the ADC max input, return current voltage as a percentage of the max to position on the screen
-    // Then scale the screen to the current min/max X values
+
+    // dlf. Scale the screen to the current min/max X grid values (as set by the GRID setup menu)
     x = (TFT_WID * (ix-(*XgridMin)) * R1 / (R2 + R1) / AdcVref) * (12.0/(*XgridMax-*XgridMin));
     ILI9341SetCursor(x + 2, TFT_HGT - 3);
     if (kind == tkPNP || kind == tkPMOSFET || kind == tkPJFET)
@@ -524,17 +547,17 @@ void Graph(bool isMove, bool isNPN, int Vcc, int Vce, int base, int Adc_12V) {
   int minAdc =  ((MinXGrid*1.0*R1/(R1+R2)*1.0)/AdcVref*1.0) * ADC_MAX;
   int maxAdc =  ((MaxXGrid*1.0*R1/(R1+R2)*1.0)/AdcVref*1.0) * ADC_MAX;
 
-  //dlf Only plot if Vce falls within the current Xgrid min/max
+  //dlf. Only plot if Vce falls within the current Xgrid min/max
   if(i<minAdc || i>maxAdc) {
     withinPlotRange = false;
   } else {
     withinPlotRange = true;
   }
 
-  //dlf Scale vce to the display width.  minAdc/maxAdc/i all in adc units (0-1023)
+  //dlf. Scale vce to the display width.  minAdc/maxAdc/i all in adc units (0-1023)
   i = TFT_WID * ((i-minAdc)*1.0/(maxAdc-minAdc)*1.0);
 
-  // dlf - Had cases where we were starting a -1 and caused illegal drawing coord which locked up the display code. 
+  // dlf. Had cases where we were starting a -1 and caused illegal drawing coord which locked up the display code. 
   if(i < 0) {
     i = 0;
   }
@@ -894,6 +917,29 @@ void ScanAllNeg(TkindDUT kind, int iFirst, int iConst, int iInc, int minBase, in
       return;
   }
   EndScan(kind);
+
+  //dlf. Add diode "return" button
+  // We are using the PNP side of the zif to test zener diodes.  You start the test by pushing the
+  // "Test-Znr" button in the upper/left side of the main menu.   When the test is done, return to
+  // the main menu by pushing the "Return" button at the upper/left of the Zener Diode grid screen.
+  if(kind == tkPDiode) {
+    int x, y;
+    const int SetupWidth = 67;
+    const int SetupHeight = 26;
+    DrawFrame(4,4, SetupWidth, SetupHeight, TFT_WHITE);
+    DrawBox(4 + 1, 4 + 1, SetupWidth - 2, SetupHeight - 2, TFT_DARKGREY);
+    DrawStringAt(4 + 4, 4 + 19, "Return", LargeFont, TFT_BLACK);
+
+    //Wait for the return button to be pushed
+    while(1) {
+      if(GetTouch(&x, &y)) {
+        if (y < 40 && x < TFT_WID/2) {
+          DrawMenuScreen();
+          return;
+        }
+      }
+    }
+  }
 }
 
 //-------------------------------------------------------------------------
@@ -919,7 +965,6 @@ void ScanAllPos(TkindDUT kind, int iFirst, int iConst, int iInc, int minBase, in
 
   SerialPrintLn("n");
 
-  //for (base = 20; base <= 20; base += incBase) {  // Single sweep for debugging
   for (base = minBase; base <= maxBase; base += incBase) {
     if (base == 0) {
       SetDacBase(iFirst, 0);
@@ -968,6 +1013,7 @@ void ScanAllPos(TkindDUT kind, int iFirst, int iConst, int iInc, int minBase, in
       return;
   }
   EndScan(kind);
+
 }
 
 //-------------------------------------------------------------------------
@@ -1129,8 +1175,6 @@ long readSupply() {
 //-------------------------------------------------------------------------
 
 int BattVolts() {
-//  Serial.println(long(GetAdcSmooth(pin_Adc_Bat)) * readSupply() * (R6 + R7) / (100L * R7 * 1024));  //dlf
-//  Serial.println(long(GetAdcSmooth(pin_Adc_12V)) * readSupply() * (47 + 33) / (100L * 33 * 1024));  //dlf
   return long(GetAdcSmooth(pin_Adc_Bat)) * readSupply() * (R6 + R7) / (100L * R7 * 1024);
 }
 
@@ -1281,8 +1325,13 @@ void MainMenuTouch(void) {
   }
 
   // dlf.  Check if grid setup button pushed
-  if (y < 70 && y > 40) {
+  if (y < 70 && y > 40 && x > TFT_WID/2) {
     if(ExecSetupMenuGrid())
+      return;
+    DrawMenuScreen();
+  // dlf. test-zener button
+  } else if (y < 70 && y > 40 && x < TFT_WID/2 && (CurDUTclass != tcJFET)) {
+      ScanKind(tkPDiode);
       return;
     DrawMenuScreen();
   } else if (y < TFT_HGT / 4) {
@@ -1367,7 +1416,7 @@ void DrawMenuScreen(void) {
       DrawZIF("sgdsg");
       DrawStringAt(27,  94, "p-MOSFET", LargeFont, TFT_WHITE);
       DrawStringAt(200, 94, "n-MOSFET", LargeFont, TFT_WHITE);
-      DrawBitmapMono(111, 43, bmpPDiodeSmall, TFT_WHITE);
+      DrawBitmapMono(111, 43, bmpZDiodeSmall, TFT_WHITE);
       DrawBitmapMono(195, 43, bmpNDiodeSmall, TFT_WHITE);
       DrawBitmapMono(80, 43, bmpPMOSFET, TFT_WHITE);
       DrawBitmapMono(219, 43, bmpNMOSFET, TFT_WHITE);
@@ -1385,7 +1434,7 @@ void DrawMenuScreen(void) {
       DrawZIF("ebceb");
       DrawStringAt(83,  94, "PNP", LargeFont, TFT_WHITE);
       DrawStringAt(200, 94, "NPN", LargeFont, TFT_WHITE);
-      DrawBitmapMono(111, 43, bmpPDiodeSmall, TFT_WHITE);
+      DrawBitmapMono(111, 43, bmpZDiodeSmall, TFT_WHITE);
       DrawBitmapMono(195, 43, bmpNDiodeSmall, TFT_WHITE);
       DrawBitmapMono(80, 43, bmpPNP, TFT_WHITE);
       DrawBitmapMono(219, 43, bmpNPN, TFT_WHITE);
@@ -1402,10 +1451,20 @@ void DrawMenuScreen(void) {
   DrawBox(SetupLeft + 1, SetupTop + 1, SetupWidth - 2, SetupHeight - 2, TFT_DARKGREY);
   DrawStringAt(SetupLeft + 4, SetupTop + 19, "SETUP", LargeFont, TFT_BLACK);
 
-  //dlf Add grid setup button
+  //dlf. Add grid setup button
   DrawFrame(SetupLeft, GridTop, SetupWidth, SetupHeight, TFT_WHITE);
   DrawBox(SetupLeft + 1, GridTop+ 1, SetupWidth - 2, SetupHeight - 2, TFT_DARKGREY);
   DrawStringAt(SetupLeft + 4, GridTop + 19, "GRID", LargeFont, TFT_BLACK);
+
+  //dlf. Add zener test button to bipolar and mosfet menus.  We need a button to start the test
+  // since a Zener won't conduct below Vz and the tester won't know a device has been inserted.
+  // For a regular diode, use the NPN side of the Zif.  The Zif diagram on the main menu page
+  // shows the zener and regular diodes and the Zif pins to insert them into.
+  if(!(CurDUTclass == tcJFET)) {
+    DrawFrame(4, GridTop, SetupWidth, SetupHeight, TFT_WHITE);
+    DrawBox(4 + 1, GridTop+ 1, SetupWidth - 2, SetupHeight - 2, TFT_DARKGREY);
+    DrawStringAt(4 + 4, GridTop + 19, "Test-Znr", MediumFont, TFT_BLACK);
+  }
 
   DrawStringAt(4,  15, "Bat ", LargeFont, RGB(128, 128, 255));
   DrawDecimal(BattVolts(), LargeFont, RGB(128, 128, 255));
