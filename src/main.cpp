@@ -14,6 +14,7 @@ scan points.  Useful for diodes since they have a very steep Ic and a low thresh
 Added separate inc/dec buttons for setting min/max values of base-current, gate-voltage
 
 Added "Test-Znr" button to main menu to initiate test for zener diodes without having to use the serial interface command.
+Print Vz in the graph after scanning.  Print Vt for diodes tested forward-biased in the NPN side of the Zif.
 
 dlf  2/7/2024
 */
@@ -67,6 +68,7 @@ int MinXGrid = 0;
 int MaxXGrid = 12;
 int valIncGrid = 1;
 long ngJFET = 255;
+float diodeThresholdVoltage;
 
 // be careful using these inside if statements:
 #define SerialPrint(s) {if (ExecSerialTx) Serial.print(s);}
@@ -540,9 +542,6 @@ void Graph(bool isMove, bool isNPN, int Vcc, int Vce, int base, int Adc_12V) {
     SerialPrint("l ");
   }
 
-  //int vceInMilliVolts = i * 1000 * (R2 + R1)*AdcVref / ADC_MAX / R1; 
-  //SerialPrint(vceInMilliVolts); SerialPrint(","); 
-
   //i = TFT_WID * i / ADC_MAX;
   int minAdc =  ((MinXGrid*1.0*R1/(R1+R2)*1.0)/AdcVref*1.0) * ADC_MAX;
   int maxAdc =  ((MaxXGrid*1.0*R1/(R1+R2)*1.0)/AdcVref*1.0) * ADC_MAX;
@@ -554,6 +553,8 @@ void Graph(bool isMove, bool isNPN, int Vcc, int Vce, int base, int Adc_12V) {
     withinPlotRange = true;
   }
 
+  int vceInMilliVolts = i * 1000 * (R2 + R1)*AdcVref / ADC_MAX / R1; 
+
   //dlf. Scale vce to the display width.  minAdc/maxAdc/i all in adc units (0-1023)
   i = TFT_WID * ((i-minAdc)*1.0/(maxAdc-minAdc)*1.0);
 
@@ -564,6 +565,11 @@ void Graph(bool isMove, bool isNPN, int Vcc, int Vce, int base, int Adc_12V) {
 
   j = j * (R2 + R1) * 10000*AdcVref / R3 / R1 / ADC_MAX; // convert j to 100s of uA
   SerialPrint(j); SerialPrint(",");
+
+  // dlf.  Capture Vce where Ic ~ 5ma-10ma to report as the zener voltage or forward threshold voltage
+  if(j >= 50 && j<= 100) {
+    diodeThresholdVoltage = vceInMilliVolts*1.0/1000.0;
+  }
 
   // scale the collector current to the display height
   j = TFT_HGT - 1 - TFT_HGT * j / (mAmax * 10);
@@ -713,6 +719,16 @@ void EndScan(TkindDUT kind) {
         DrawString("-", LargeFont, TFT_CYAN);
       i = GetJfetPinchOff(kind);
       DrawDecimal(i, LargeFont, TFT_CYAN);
+      break;
+
+    case tkNDiode:
+      DrawString("      Vt=", LargeFont, TFT_CYAN);
+      DrawDecimal(diodeThresholdVoltage*10.0, LargeFont, TFT_CYAN);
+      break;
+
+    case tkPDiode:
+      DrawString("  Vz=", LargeFont, TFT_CYAN);
+      DrawDecimal(diodeThresholdVoltage*10.0, LargeFont, TFT_CYAN);
       break;
   }
 
