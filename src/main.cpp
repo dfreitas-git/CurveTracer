@@ -16,6 +16,8 @@ Added separate inc/dec buttons for setting min/max values of base-current, gate-
 Added "Test-Znr" button to main menu to initiate test for zener diodes without having to use the serial interface command.
 Print Vz in the graph after scanning.  Print Vt for diodes tested forward-biased in the NPN side of the Zif.
 
+Added "S" command to toggle the DACs into a 0-255 sweep mode.
+
 dlf  2/7/2024
 */
 
@@ -30,6 +32,8 @@ byte i = 0;
 int prev_x = 0, prev_y = 0;
 bool ExecSerialTx = false; // send scans to PC
 bool SendAdcValues = false; // send ADC values to PC
+bool sweepDacs = false;  // toggle the dacs into a 0-255 sweep mode for testing voltages
+bool printDacs = false;  // if true, we will print the DAC values to the Serial monitor
 int minYposGain, maxYposGain, minBaseGain, maxBaseGain; // used when calc gain
 
 const int TFT_WID = 320;
@@ -1309,6 +1313,19 @@ void ExecSerialCmd(void) {
       DrawMenuScreen();
       break;
 
+    //dlf.  Sweep the Dacs continuously from 0-255 to test voltages
+    case 'S':
+      sweepDacs = true;
+      printDacs = true;
+      break;
+
+    //dlf.  Sweep the Dacs continuously from 0-255 but don't print anything to the serial monitor
+    //      Faster loop for using a scope.
+    case 's':
+      sweepDacs = true;
+      printDacs = false;
+      break;
+
     default:
       return;
   }
@@ -1712,6 +1729,29 @@ void loop(void) {
   ExecSerialCmd();
 
   PrintADCs();
+
+  // dlf.  If true, sweep the DACs for debug/testing DAC voltage, OpAmp voltage with a meter
+  if(sweepDacs) {
+    if(printDacs) {
+      SendAdcValues=true;
+      ExecSerialTx = true;
+    }
+    int i=0;
+    for(int i=0; i<256; i++) {
+      SetDacBase(i, 0);
+      SetDacVcc(i, 0);
+      delay(1);
+
+      if(printDacs) {
+        // Print all fields for this dac setting on one line to make it easy to parse later for spreadsheet
+        Serial.print("Set DACs to "); Serial.print(i); Serial.print("   ");
+        PrintADCs();
+      }
+    }
+  }
+  sweepDacs=false;
+  SendAdcValues=false;
+  ExecSerialTx = false;
 
   if (millis() - time > 2000 && !ExecSerialTx) {
     kind = TestDeviceKind(curkind, false);
