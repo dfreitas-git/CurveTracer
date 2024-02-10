@@ -732,6 +732,10 @@ void EndScan(TkindDUT kind) {
   }
 
   SerialPrint("g "); SerialPrintLn(i);
+
+  //dlf Reset value so we don't display old value on new diode test screen
+  diodeThresholdVoltage=0;
+
 }
 
 //-------------------------------------------------------------------------
@@ -950,7 +954,6 @@ void ScanAllNeg(TkindDUT kind, int iFirst, int iConst, int iInc, int minBase, in
       if(GetTouch(&x, &y)) {
         if (y < 40 && x < TFT_WID/2) {
           DrawMenuScreen();
-          diodeThresholdVoltage=0;
           return;
         }
       }
