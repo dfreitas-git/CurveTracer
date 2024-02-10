@@ -44,7 +44,6 @@ const int pin_ADC_PNP_Vcc = 3;
 const int pin_Adc_12V = 7;
 const int pin_Adc_Bat = 6;
 
-//const int R1 = 33; // ADC input potential divider lower resistor k-ohms
 const int R1 = 33; // ADC input potential divider lower resistor k-ohms
 const int R2 = 47; // ADC input potential divider upper resistor k-ohms
 const int R3 = 100; // collector resistor ohms
@@ -994,13 +993,17 @@ void ScanAllPos(TkindDUT kind, int iFirst, int iConst, int iInc, int minBase, in
     // Sweep Vcc Dac
     for (DacVcc = 0; DacVcc <= 255; DacVcc += 2) {
       SetDacVcc(DacVcc, 1);
-      //Serial.print("DacVcc=>"); Serial.println(DacVcc);
 
       if (DacVcc == 0) {
         delay(30);
       }
 
+      int vccAdc = GetAdcSmooth(pin_ADC_NPN_Vcc);
       Graph(DacVcc == 0, true, GetAdcSmooth(pin_ADC_NPN_Vcc), GetAdcSmooth(pin_ADC_NPN_Vce), base, ADC_MAX - 1);
+
+      // dlf.  Debug print to monitor DAC/OpAmp 
+      //float vccInMilliVolts =  GetAdcSmooth(pin_ADC_NPN_Vcc) * 1000.0 * ((R2 + R1)*AdcVref) / ADC_MAX*1.0 / R1*1.0; 
+      //Serial.print("DacCount,VccOpAmpMv  "); Serial.print(DacVcc); Serial.print(" , ");Serial.println(vccInMilliVolts);
 
       if (prev_y < 0)
         DacVcc = 256;
