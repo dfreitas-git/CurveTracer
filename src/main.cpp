@@ -951,6 +951,7 @@ void ScanAllNeg(TkindDUT kind, int iFirst, int iConst, int iInc, int minBase, in
       if(GetTouch(&x, &y)) {
         if (y < 40 && x < TFT_WID/2) {
           DrawMenuScreen();
+          diodeThresholdVoltage=0;
           return;
         }
       }
