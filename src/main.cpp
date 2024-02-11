@@ -13,7 +13,8 @@ scan points.  Useful for diodes since they have a very steep Ic and a low thresh
 
 Added separate inc/dec buttons for setting min/max values of base-current, gate-voltage
 
-Added "Test-Znr" button to main menu to initiate test for zener diodes without having to use the serial interface command.
+Added "Test-Znr" button to main menu to initiate test for zener diodes whos Vz is too close to the opAmp max to auto-trigger the test.
+This lets us start the test without having to use the serial interface command.
 Print Vz in the graph after scanning.  Print Vt for diodes tested forward-biased in the NPN side of the Zif.
 
 Added "S" command to toggle the DACs into a 0-255 sweep mode.
@@ -547,8 +548,8 @@ void Graph(bool isMove, bool isNPN, int Vcc, int Vce, int base, int Adc_12V) {
   }
 
   //i = TFT_WID * i / ADC_MAX;
-  int minAdc =  ((MinXGrid*1.0*R1/(R1+R2)*1.0)/AdcVref*1.0) * ADC_MAX;
-  int maxAdc =  ((MaxXGrid*1.0*R1/(R1+R2)*1.0)/AdcVref*1.0) * ADC_MAX;
+  int minAdc =  ((MinXGrid*1.0*R1/(R1+R2)*1.0)/AdcVref*1.0) * Adc_12V;
+  int maxAdc =  ((MaxXGrid*1.0*R1/(R1+R2)*1.0)/AdcVref*1.0) * Adc_12V;
 
   //dlf. Only plot if Vce falls within the current Xgrid min/max
   if(i<minAdc || i>maxAdc) {
@@ -557,7 +558,7 @@ void Graph(bool isMove, bool isNPN, int Vcc, int Vce, int base, int Adc_12V) {
     withinPlotRange = true;
   }
 
-  int vceInMilliVolts = i * 1000 * (R2 + R1)*AdcVref / ADC_MAX / R1; 
+  int vceInMilliVolts = i * 1000 * (R2 + R1)*AdcVref / Adc_12V / R1; 
 
   //dlf. Scale vce to the display width.  minAdc/maxAdc/i all in adc units (0-1023)
   i = TFT_WID * ((i-minAdc)*1.0/(maxAdc-minAdc)*1.0);
@@ -567,7 +568,7 @@ void Graph(bool isMove, bool isNPN, int Vcc, int Vce, int base, int Adc_12V) {
     i = 0;
   }
 
-  j = j * (R2 + R1) * 10000*AdcVref / R3 / R1 / ADC_MAX; // convert j to 100s of uA
+  j = j * (R2 + R1) * 10000*AdcVref / R3 / R1 / Adc_12V; // convert j to 100s of uA
   SerialPrint(j); SerialPrint(",");
 
   // dlf.  Capture Vce where Ic ~ 5ma-10ma to report as the zener voltage or forward threshold voltage
@@ -1011,7 +1012,8 @@ void ScanAllPos(TkindDUT kind, int iFirst, int iConst, int iInc, int minBase, in
       Graph(DacVcc == 0, true, GetAdcSmooth(pin_ADC_NPN_Vcc), GetAdcSmooth(pin_ADC_NPN_Vce), base, ADC_MAX - 1);
 
       // dlf.  Debug print to monitor DAC/OpAmp 
-      //float vccInMilliVolts =  GetAdcSmooth(pin_ADC_NPN_Vcc) * 1000.0 * ((R2 + R1)*AdcVref) / ADC_MAX*1.0 / R1*1.0; 
+      //int Adc_12V = GetAdcSmooth(pin_Adc_12V);
+      //float vccInMilliVolts =  GetAdcSmooth(pin_ADC_NPN_Vcc) * 1000.0 * ((R2 + R1)*AdcVref) / Adc_12V*1.0 / R1*1.0; 
       //Serial.print("DacCount,VccOpAmpMv  "); Serial.print(DacVcc); Serial.print(" , ");Serial.println(vccInMilliVolts);
 
       if (prev_y < 0)
