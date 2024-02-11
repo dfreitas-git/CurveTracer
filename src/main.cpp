@@ -1742,7 +1742,6 @@ void loop(void) {
       SendAdcValues=true;
       ExecSerialTx = true;
     }
-    int i=0;
     for(int i=0; i<256; i++) {
       SetDacBase(i, 0);
       SetDacVcc(i, 0);
