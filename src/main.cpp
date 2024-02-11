@@ -34,6 +34,7 @@ bool ExecSerialTx = false; // send scans to PC
 bool SendAdcValues = false; // send ADC values to PC
 bool sweepDacs = false;  // toggle the dacs into a 0-255 sweep mode for testing voltages
 bool printDacs = false;  // if true, we will print the DAC values to the Serial monitor
+bool zenerButtonUsed = false; // if we manually run a zener test set true
 int minYposGain, maxYposGain, minBaseGain, maxBaseGain; // used when calc gain
 
 const int TFT_WID = 320;
@@ -945,7 +946,7 @@ void ScanAllNeg(TkindDUT kind, int iFirst, int iConst, int iInc, int minBase, in
   // We are using the PNP side of the zif to test zener diodes.  You start the test by pushing the
   // "Test-Znr" button in the upper/left side of the main menu.   When the test is done, return to
   // the main menu by pushing the "Return" button at the upper/left of the Zener Diode grid screen.
-  if(kind == tkPDiode) {
+  if(kind == tkPDiode && zenerButtonUsed) {
     int x, y;
     const int SetupWidth = 67;
     const int SetupHeight = 26;
@@ -958,6 +959,7 @@ void ScanAllNeg(TkindDUT kind, int iFirst, int iConst, int iInc, int minBase, in
       if(GetTouch(&x, &y)) {
         if (y < 40 && x < TFT_WID/2) {
           DrawMenuScreen();
+          zenerButtonUsed = false;
           return;
         }
       }
@@ -1371,6 +1373,7 @@ void MainMenuTouch(void) {
     DrawMenuScreen();
   // dlf. test-zener button
   } else if (y < 70 && y > 40 && x < TFT_WID/2 && (CurDUTclass != tcJFET)) {
+      zenerButtonUsed = true;
       ScanKind(tkPDiode);
       return;
     DrawMenuScreen();
@@ -1731,6 +1734,7 @@ void loop(void) {
   PrintADCs();
 
   // dlf.  If true, sweep the DACs for debug/testing DAC voltage, OpAmp voltage with a meter
+  //       If printDacs false, supress printing for a fast single-sweep to be viewed on a scope.
   if(sweepDacs) {
     if(printDacs) {
       SendAdcValues=true;
