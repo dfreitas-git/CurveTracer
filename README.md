@@ -2,6 +2,8 @@
 
 * Base code from Instructables at https://www.instructables.com/Transistor-Curve-Tracer/
 
+* Modified design to use TCA0372 OpAmps.
+
 * Modified to use Arduino Nano.  Modified power supply.  Now uses two lithium 18650 batteries or a 9v power supply.
 Generates 3.3v and 12v using buck/boost converters.
 
@@ -28,3 +30,6 @@ dlf  2/7/2024
 
 ### Gerber Files
 * Unzip the file: Gerber_PCB_Curvei_Tracer_Rev2.1.zip
+
+### OpAmp Output Measurment (to see how close we get to rail-to-rail operation
+![Alt text](./DacVsOpAmpOut.png "DAC count Vs OpAmp Output")
