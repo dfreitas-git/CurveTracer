@@ -26,10 +26,10 @@ dlf  2/7/2024
 
 
 ### PC Board Layout
-![Alt text](./PCB_Curve_Tracer_Rev2.1.png "PC Board Layout")
+![Alt text](./PCB_Curve_Tracer_Rev3.png "PC Board Layout")
 
 ### Gerber Files
-* Unzip the file: Gerber_PCB_Curvei_Tracer_Rev2.1.zip
+* Unzip the file: Gerber_PCB_Curvei_Tracer_Rev3.zip
 
 ### OpAmp Output Measurment (to see how close we get to rail-to-rail operation
 ![Alt text](./DacVsOpAmpOut.png "DAC count Vs OpAmp Output")
