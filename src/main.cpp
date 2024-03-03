@@ -13,9 +13,10 @@ scan points.  Useful for diodes since they have a very steep Ic and a low thresh
 
 Added separate inc/dec buttons for setting min/max values of base-current, gate-voltage
 
-Added "Test-Znr" button to main menu to initiate test for zener diodes whos Vz is too close to the opAmp max to auto-trigger the test.
+Added "Test-Znr" button to main menu to initiate test for zener diodes.  This will ramp the voltage top 24V (as opposed to 12V for the
 This lets us start the test without having to use the serial interface command.
-Print Vz in the graph after scanning.  Print Vt for diodes tested forward-biased in the NPN side of the Zif.
+transistors).  The two bottom pins of the Zif socket are used for zener diode testing.
+Print Vz in the graph after scanning.  
 
 Added "S" command to toggle the DACs into a 0-255 sweep mode.
 
@@ -47,9 +48,14 @@ const int pin_ADC_NPN_Vcc = 0;
 const int pin_ADC_NPN_Vce = 1;
 const int pin_ADC_PNP_Vce = 2;
 const int pin_ADC_PNP_Vcc = 3;
+const int pin_ADC_Zener_Vcc = 4;
+const int pin_ADC_Zener_Vca = 5;
 const int pin_Adc_12V = 7;
 const int pin_Adc_Bat = 6;
 
+const long ZENER_R1 = 30; // ADC input potential divider lower resistor k-ohms for zener
+const long ZENER_R2 = 120; // ADC input potential divider upper resistor k-ohms for zener
+const long ZENER_R3 = 470; // cathode resistor ohms for zener
 const int R1 = 33; // ADC input potential divider lower resistor k-ohms
 const int R2 = 47; // ADC input potential divider upper resistor k-ohms
 const int R3 = 100; // collector resistor ohms
@@ -60,6 +66,11 @@ const int R7 = 33; // measure battery volts potential divider lower resistor k-o
 
 const int DacVref = 40; // DAC Vref in 100s of mV
 const int AdcVref = 5; // ADC Vref in V
+
+// The ADC count that equals 24v 
+// ZENER_R1/R2 result in 24v -> 4.8v at the Arduino ADC input so we need to scale down the 1023 count
+const long Adc_24V = 980;  
+
 const int mAmax = 50; // Ic for top of screen
 const int Ib_inc = 50; // increment for Ibase step
 const unsigned long TimeoutPeriod = 60000;
@@ -79,8 +90,8 @@ float diodeThresholdVoltage;
 #define SerialPrint(s) {if (ExecSerialTx) Serial.print(s);}
 #define SerialPrintLn(s) {if (ExecSerialTx) Serial.println(s);}
 
-enum TkindDUT {tkNothing, tkPNP, tkNPN, tkPMOSFET, tkNMOSFET, tkNJFET, tkPJFET, tkPDiode, tkNDiode};
-TkindDUT curkind;
+enum TkindDUT {tkNothing, tkPNP, tkNPN, tkPMOSFET, tkNMOSFET, tkNJFET, tkPJFET, tkPDiode, tkNDiode, tkZenerDiode};
+TkindDUT curkind = tkNothing;
 
 enum TclassDUT {tcBipolar, tcMOSFET, tcJFET};
 TclassDUT CurDUTclass = tcBipolar;
@@ -228,7 +239,7 @@ void SetDac(uint8_t value, uint8_t cmd);
 void SetDacVcc(uint8_t value, int tDelay);
 void SetDacBase(uint8_t value, int tDelay) ;
 void InitGraph(TkindDUT kind, int *gridMin, int *gridMax, int *gridInc);
-void Graph(bool isMove, bool isNPN, int Vcc, int Vce, int base, int Adc_12V) ;
+void Graph(TkindDUT kind, bool isMove, bool isNPN, int Vcc, int Vce, int base, int Adc_12V) ;
 int GetPMosfetThreshold() ;
 int GetNMosfetThreshold() ;
 int GetJfetPinchOff(TkindDUT kind) ;
@@ -291,12 +302,16 @@ void DrawKindStr(TkindDUT kind) {
       DrawBitmapMono((TFT_WID - 28) / 2, 25, bmpNJFET, TFT_YELLOW);
       break;
     case tkPDiode:
-      DrawStringAt((TFT_WID - 100) / 2, 15, "Zener Diode", LargeFont, TFT_YELLOW);
-      DrawBitmapMono((TFT_WID - 20) / 2, 25, bmpZDiodeBig, TFT_YELLOW);
+      DrawStringAt((TFT_WID - 100) / 2, 15, "Diode", LargeFont, TFT_YELLOW);
+      DrawBitmapMono((TFT_WID - 20) / 2, 25, bmpNDiodeBig, TFT_YELLOW);
       break;
     case tkNDiode:
       DrawStringAt((TFT_WID - 47) / 2, 15, "Diode", LargeFont, TFT_YELLOW);
       DrawBitmapMono((TFT_WID - 20) / 2, 25, bmpPDiodeBig, TFT_YELLOW);
+      break;
+    case tkZenerDiode:
+      DrawStringAt((TFT_WID - 100) / 2, 15, "Zener Diode", LargeFont, TFT_YELLOW);
+      DrawBitmapMono((TFT_WID - 20) / 2, 25, bmpZDiodeBig, TFT_YELLOW);
       break;
     default: // unknown
       DrawStringAt((TFT_WID - 117) / 2, 15, "Curve Tracer", LargeFont, TFT_YELLOW);
@@ -495,10 +510,23 @@ void InitGraph(TkindDUT kind, int *XgridMin, int *XgridMax, int *XgridInc) {
   DrawLine(0, 0, 0, TFT_HGT, TFT_DARKGREY);
   DrawLine(0, TFT_HGT - 1, TFT_WID, TFT_HGT - 1, TFT_DARKGREY);
 
-  for (ix = *XgridMin + *XgridInc; ix <= *XgridMax; ix += *XgridInc) {
+  int gmin, gmax, ginc;
+  if(kind == tkZenerDiode) {
+    // Override grid from grid menu and use a fixed 24v axis
+    gmin = 0;
+    gmax = 24;
+    ginc = 1;
+  } else {
+    gmin = *XgridMin;
+    gmax = *XgridMax;
+    ginc = *XgridInc;
+
+  }
+
+  for (ix = gmin + ginc; ix <= gmax; ix += ginc) {
 
     // dlf. Scale the screen to the current min/max X grid values (as set by the GRID setup menu)
-    x = (TFT_WID * (ix-(*XgridMin)) * R1 / (R2 + R1) / AdcVref) * (12.0/(*XgridMax-*XgridMin));
+    x = (TFT_WID * (ix-gmin) * R1 / (R2 + R1) / AdcVref) * (12.0/(gmax-gmin));
     ILI9341SetCursor(x + 2, TFT_HGT - 3);
     if (kind == tkPNP || kind == tkPMOSFET || kind == tkPJFET)
       DrawString("-", SmallFont, TFT_DARKGREY);
@@ -527,8 +555,9 @@ void InitGraph(TkindDUT kind, int *XgridMin, int *XgridMax, int *XgridInc) {
 //   base in uA
 //-------------------------------------------------------------------------
 
-void Graph(bool isMove, bool isNPN, int Vcc, int Vce, int base, int Adc_12V) {
-  long i, j;
+void Graph(TkindDUT kind, bool isMove, bool isNPN, int Vcc, int Vce, int base, int Adc_12V) {
+  float i;
+  float j;
   static int px, py;
   boolean withinPlotRange;
 
@@ -558,7 +587,12 @@ void Graph(bool isMove, bool isNPN, int Vcc, int Vce, int base, int Adc_12V) {
     withinPlotRange = true;
   }
 
-  int vceInMilliVolts = i * 1000 * (R2 + R1)*AdcVref / Adc_12V / R1; 
+  int vcaInMilliVolts;
+  if(kind == tkZenerDiode) {
+     vcaInMilliVolts = i * 1000 * ((ZENER_R2 + ZENER_R1) * AdcVref) / (Adc_24V * ZENER_R1); 
+  } else {
+     vcaInMilliVolts = i * 1000 * ((R2 + R1) * AdcVref) / Adc_12V / R1; 
+  }
 
   //dlf. Scale vce to the display width.  minAdc/maxAdc/i all in adc units (0-1023)
   i = TFT_WID * ((i-minAdc)*1.0/(maxAdc-minAdc)*1.0);
@@ -568,12 +602,17 @@ void Graph(bool isMove, bool isNPN, int Vcc, int Vce, int base, int Adc_12V) {
     i = 0;
   }
 
-  j = j * (R2 + R1) * 10000*AdcVref / R3 / R1 / Adc_12V; // convert j to 100s of uA
-  SerialPrint(j); SerialPrint(",");
+  if(kind == tkZenerDiode) {
+    long numerator = (ZENER_R2 + ZENER_R1) * 10000 * AdcVref;
+    long denominator = ZENER_R3 * ZENER_R1 * Adc_24V;
+    j = (j * numerator) / denominator; // convert j to 100s of uA
+  } else {
+    j = j * (R2 + R1) * 10000 * AdcVref / R3 / R1 / Adc_12V; // convert j to 100s of uA
+  }
 
   // dlf.  Capture Vce where Ic ~ 5ma-10ma to report as the zener voltage or forward threshold voltage
   if(j >= 50 && j<= 100) {
-    diodeThresholdVoltage = vceInMilliVolts*1.0/1000.0;
+    diodeThresholdVoltage = vcaInMilliVolts*1.0/1000.0;
   }
 
   // scale the collector current to the display height
@@ -732,6 +771,11 @@ void EndScan(TkindDUT kind) {
       break;
 
     case tkPDiode:
+      DrawString("  Vt=", LargeFont, TFT_CYAN);
+      DrawDecimal(diodeThresholdVoltage*10.0, LargeFont, TFT_CYAN);
+      break;
+
+    case tkZenerDiode:
       DrawString("  Vz=", LargeFont, TFT_CYAN);
       DrawDecimal(diodeThresholdVoltage*10.0, LargeFont, TFT_CYAN);
       break;
@@ -912,7 +956,7 @@ void ScanAllNeg(TkindDUT kind, int iFirst, int iConst, int iInc, int minBase, in
         delay(30);
       }
 
-      Graph(DacVcc == 255, false, GetAdcSmooth(pin_ADC_PNP_Vcc),GetAdcSmooth(pin_ADC_PNP_Vce) , base, Adc_12V);
+      Graph(kind, DacVcc == 255, false, GetAdcSmooth(pin_ADC_PNP_Vcc),GetAdcSmooth(pin_ADC_PNP_Vce) , base, Adc_12V);
 
       if (prev_y < 0)
         DacVcc = -1;
@@ -943,29 +987,6 @@ void ScanAllNeg(TkindDUT kind, int iFirst, int iConst, int iInc, int minBase, in
   }
   EndScan(kind);
 
-  //dlf. Add diode "return" button
-  // We are using the PNP side of the zif to test zener diodes.  You start the test by pushing the
-  // "Test-Znr" button in the upper/left side of the main menu.   When the test is done, return to
-  // the main menu by pushing the "Return" button at the upper/left of the Zener Diode grid screen.
-  if(kind == tkPDiode && zenerButtonUsed) {
-    int x, y;
-    const int SetupWidth = 67;
-    const int SetupHeight = 26;
-    DrawFrame(4,4, SetupWidth, SetupHeight, TFT_WHITE);
-    DrawBox(4 + 1, 4 + 1, SetupWidth - 2, SetupHeight - 2, TFT_DARKGREY);
-    DrawStringAt(4 + 4, 4 + 19, "Return", LargeFont, TFT_BLACK);
-
-    //Wait for the return button to be pushed
-    while(1) {
-      if(GetTouch(&x, &y)) {
-        if (y < 40 && x < TFT_WID/2) {
-          DrawMenuScreen();
-          zenerButtonUsed = false;
-          return;
-        }
-      }
-    }
-  }
 }
 
 //-------------------------------------------------------------------------
@@ -1008,8 +1029,11 @@ void ScanAllPos(TkindDUT kind, int iFirst, int iConst, int iInc, int minBase, in
         delay(30);
       }
 
-      int vccAdc = GetAdcSmooth(pin_ADC_NPN_Vcc);
-      Graph(DacVcc == 0, true, GetAdcSmooth(pin_ADC_NPN_Vcc), GetAdcSmooth(pin_ADC_NPN_Vce), base, ADC_MAX - 1);
+      if(kind == tkZenerDiode) {
+        Graph(kind, DacVcc == 0, true, GetAdcSmooth(pin_ADC_Zener_Vcc), GetAdcSmooth(pin_ADC_Zener_Vca), base, ADC_MAX - 1);
+      } else {
+        Graph(kind, DacVcc == 0, true, GetAdcSmooth(pin_ADC_NPN_Vcc), GetAdcSmooth(pin_ADC_NPN_Vce), base, ADC_MAX - 1);
+      }
 
       // dlf.  Debug print to monitor DAC/OpAmp 
       //int Adc_12V = GetAdcSmooth(pin_Adc_12V);
@@ -1045,6 +1069,29 @@ void ScanAllPos(TkindDUT kind, int iFirst, int iConst, int iInc, int minBase, in
   }
   EndScan(kind);
 
+  //dlf. Add diode "return" button
+  // We are using the two bottom pins of the zif to test zener diodes.  You start the test by pushing the
+  // "Test-Znr" button in the upper/left side of the main menu.   When the test is done, return to
+  // the main menu by pushing the "Return" button at the upper/left of the Zener Diode grid screen.
+  if(kind == tkZenerDiode && zenerButtonUsed) {
+    int x, y;
+    const int SetupWidth = 67;
+    const int SetupHeight = 26;
+    DrawFrame(4,4, SetupWidth, SetupHeight, TFT_WHITE);
+    DrawBox(4 + 1, 4 + 1, SetupWidth - 2, SetupHeight - 2, TFT_DARKGREY);
+    DrawStringAt(4 + 4, 4 + 19, "Return", LargeFont, TFT_BLACK);
+
+    //Wait for the return button to be pushed
+    while(1) {
+      if(GetTouch(&x, &y)) {
+        if (y < 40 && x < TFT_WID/2) {
+          DrawMenuScreen();
+          zenerButtonUsed = false;
+          return;
+        }
+      }
+    }
+  }
 }
 
 //-------------------------------------------------------------------------
@@ -1070,9 +1117,9 @@ void ScanJFET(TkindDUT kind, int minVgs, int maxVgs, int incVgs) {
     for (DacVcc = DAC0; DacVcc >= 0 && DacVcc <= 255; DacVcc += DACinc) {
       if (SetJFETvolts(kind, DacVcc, Vgs)) {
         if (kind == tkNJFET)
-          Graph(!penDown, false, GetAdcSmooth(pin_ADC_PNP_Vcc), GetAdcSmooth(pin_ADC_PNP_Vce), Vgs, Adc_12V);
+          Graph(kind, !penDown, false, GetAdcSmooth(pin_ADC_PNP_Vcc), GetAdcSmooth(pin_ADC_PNP_Vce), Vgs, Adc_12V);
         else
-          Graph(!penDown, true, GetAdcSmooth(pin_ADC_NPN_Vcc), GetAdcSmooth(pin_ADC_NPN_Vce), Vgs, ADC_MAX - 1);
+          Graph(kind, !penDown, true, GetAdcSmooth(pin_ADC_NPN_Vcc), GetAdcSmooth(pin_ADC_NPN_Vce), Vgs, ADC_MAX - 1);
         penDown = true;
       }
       else
@@ -1112,6 +1159,11 @@ void ScanKind(TkindDUT kind) {
       maxBase = MaxIbase * 10 / 50;
       break;
 
+    case tkZenerDiode:
+      minBase = MinIbase * 10 / 50;
+      maxBase = MaxIbase * 10 / 50;
+      break;
+
     case tkPMOSFET:
     case tkNMOSFET:
       minBase = MinVgate * 10;
@@ -1145,6 +1197,8 @@ void ScanKind(TkindDUT kind) {
 
     case tkPDiode:  ScanAllNeg(kind, 255, 255,           0,  0,       0,       10,      Adc_12V); break;
     case tkNDiode:  ScanAllPos(kind, 0,   0,             0,  0,       0,       10);               break;
+
+    case tkZenerDiode:  ScanAllPos(kind, 0,   0,             0,  0,       0,       10);               break;
   }
 }
 
@@ -1330,6 +1384,11 @@ void ExecSerialCmd(void) {
       printDacs = false;
       break;
 
+    case 'Z':
+      ExecSerialTx = true;
+      ScanKind(tkZenerDiode);
+      break;
+
     default:
       return;
   }
@@ -1373,10 +1432,11 @@ void MainMenuTouch(void) {
     if(ExecSetupMenuGrid())
       return;
     DrawMenuScreen();
-  // dlf. test-zener button
+
+  // dlf. set test-zener button flag
   } else if (y < 70 && y > 40 && x < TFT_WID/2 && (CurDUTclass != tcJFET)) {
       zenerButtonUsed = true;
-      ScanKind(tkPDiode);
+      ScanKind(tkZenerDiode);
       return;
     DrawMenuScreen();
   } else if (y < TFT_HGT / 4) {
@@ -1461,7 +1521,7 @@ void DrawMenuScreen(void) {
       DrawZIF("sgdsg");
       DrawStringAt(27,  94, "p-MOSFET", LargeFont, TFT_WHITE);
       DrawStringAt(200, 94, "n-MOSFET", LargeFont, TFT_WHITE);
-      DrawBitmapMono(111, 43, bmpZDiodeSmall, TFT_WHITE);
+      DrawBitmapMono(111, 43, bmpPDiodeSmall, TFT_WHITE);
       DrawBitmapMono(195, 43, bmpNDiodeSmall, TFT_WHITE);
       DrawBitmapMono(80, 43, bmpPMOSFET, TFT_WHITE);
       DrawBitmapMono(219, 43, bmpNMOSFET, TFT_WHITE);
@@ -1479,7 +1539,7 @@ void DrawMenuScreen(void) {
       DrawZIF("ebceb");
       DrawStringAt(83,  94, "PNP", LargeFont, TFT_WHITE);
       DrawStringAt(200, 94, "NPN", LargeFont, TFT_WHITE);
-      DrawBitmapMono(111, 43, bmpZDiodeSmall, TFT_WHITE);
+      DrawBitmapMono(111, 43, bmpPDiodeSmall, TFT_WHITE);
       DrawBitmapMono(195, 43, bmpNDiodeSmall, TFT_WHITE);
       DrawBitmapMono(80, 43, bmpPNP, TFT_WHITE);
       DrawBitmapMono(219, 43, bmpNPN, TFT_WHITE);
@@ -1759,10 +1819,10 @@ void loop(void) {
   ExecSerialTx = false;
 
   if (millis() - time > 2000 && !ExecSerialTx) {
-    kind = TestDeviceKind(curkind, false);
+      kind = TestDeviceKind(curkind, false);
     if ((curkind == tkNothing) && kind != tkNothing) {
       delay(500); // so component is fully inserted
-      kind = TestDeviceKind(kind, true);
+        kind = TestDeviceKind(kind, true);
       if (kind != tkNothing) {
         ScanKind(kind);
       }
