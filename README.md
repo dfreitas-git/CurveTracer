@@ -20,6 +20,10 @@ Print Vz in the graph after scanning.  Print Vt for diodes tested forward-biased
 
 dlf  2/7/2024
 
+* 3/3/2024 - Modified design to use 24v supply on the OpAmps.  Eliminates the upper rail 12v limitation.  Also added separate Zener-Diode test
+that sweeps up to 24v.  Transistors still only sweep to 12v.
+
+
 ### Schematics
 ![Alt text](./Schematic_Sheet1.png "Schematic_Sheet1")
 ![Alt text](./Schematic_Sheet2.png "Schematic_Sheet2")
@@ -31,5 +35,8 @@ dlf  2/7/2024
 ### Gerber Files
 * Unzip the file: Gerber_PCB_Curvei_Tracer_Rev3.zip
 
-### OpAmp Output Measurment (to see how close we get to rail-to-rail operation
+### OpAmp Output Measurment (to see how close we get to rail-to-rail operation with Rev2.1 design)
 ![Alt text](./DacVsOpAmpOut.png "DAC count Vs OpAmp Output")
+
+### 24V OpAmp Output Measurment (With Rev3.0 design)
+![Alt text](./DAC_vs_24VOpAmpOut.png "DAC count Vs 24V OpAmp Output")

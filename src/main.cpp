@@ -1036,9 +1036,9 @@ void ScanAllPos(TkindDUT kind, int iFirst, int iConst, int iInc, int minBase, in
       }
 
       // dlf.  Debug print to monitor DAC/OpAmp 
-      //int Adc_12V = GetAdcSmooth(pin_Adc_12V);
-      //float vccInMilliVolts =  GetAdcSmooth(pin_ADC_NPN_Vcc) * 1000.0 * ((R2 + R1)*AdcVref) / Adc_12V*1.0 / R1*1.0; 
-      //Serial.print("DacCount,VccOpAmpMv  "); Serial.print(DacVcc); Serial.print(" , ");Serial.println(vccInMilliVolts);
+      int Adc_12V = GetAdcSmooth(pin_Adc_12V);
+      float vccInMilliVolts =  GetAdcSmooth(pin_ADC_NPN_Vcc) * 1000.0 * ((R2 + R1)*AdcVref) / Adc_12V*1.0 / R1*1.0; 
+      Serial.print("DacCount,VccOpAmpMv,  "); Serial.print(DacVcc); Serial.print(" , ");Serial.println(vccInMilliVolts);
 
       if (prev_y < 0)
         DacVcc = 256;
