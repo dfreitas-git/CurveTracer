@@ -1148,8 +1148,8 @@ void ScanKind(TkindDUT kind) {
   int minBase, maxBase, incBase, Adc_12V, base_adj;
 
   Adc_12V = GetAdcSmooth(pin_Adc_12V);
-  base_adj = Adc_12V / 4 - 255;
-  //base_adj = 0;
+  //base_adj = Adc_12V / 4 - 255;
+  base_adj = 0;
 
   InitGraph(kind, &MinXGrid, &MaxXGrid, &valIncGrid);
   switch (kind) {
@@ -1186,7 +1186,7 @@ void ScanKind(TkindDUT kind) {
 
 
   switch (kind) {
-    case tkPNP:     ScanAllNeg(kind, 255, 215 + base_adj, -27, minBase, maxBase, incBase, Adc_12V); break;
+    case tkPNP:     ScanAllNeg(kind, 246, 233 + base_adj, -27, minBase, maxBase, incBase, Adc_12V); break;
     case tkNPN:     ScanAllPos(kind, 0,   14,            27, minBase, maxBase, incBase);          break;
 
     case tkPMOSFET: ScanAllNeg(kind, 220, 220 + base_adj, -21, minBase, maxBase, incBase, Adc_12V); break;
@@ -1802,6 +1802,7 @@ void loop(void) {
       SendAdcValues=true;
       ExecSerialTx = true;
     }
+
     for(int i=0; i<256; i++) {
       SetDacBase(i, 0);
       SetDacVcc(i, 0);
