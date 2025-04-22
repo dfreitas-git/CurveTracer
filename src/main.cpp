@@ -13,9 +13,10 @@ scan points.  Useful for diodes since they have a very steep Ic and a low thresh
 
 Added separate inc/dec buttons for setting min/max values of base-current, gate-voltage
 
-Added "Test-Znr" button to main menu to initiate test for zener diodes.  This will ramp the voltage top 24V (as opposed to 12V for the
+Added "Test-Znr" button to main menu to initiate test for zener diodes.  This will ramp the voltage to 24V (as opposed to 12V for the
 This lets us start the test without having to use the serial interface command.
-transistors).  The two bottom pins of the Zif socket are used for zener diode testing.
+
+The two bottom pins of the Zif socket are used for zener diode testing.
 Print Vz in the graph after scanning.  
 
 Added "S" command to toggle the DACs into a 0-255 sweep mode.
@@ -511,6 +512,7 @@ void InitGraph(TkindDUT kind, int *XgridMin, int *XgridMax, int *XgridInc) {
   DrawLine(0, TFT_HGT - 1, TFT_WID, TFT_HGT - 1, TFT_DARKGREY);
 
   int gmin, gmax, ginc;
+  /* dlf
   if(kind == tkZenerDiode) {
     // Override grid from grid menu and use a fixed 24v axis
     gmin = 0;
@@ -520,8 +522,12 @@ void InitGraph(TkindDUT kind, int *XgridMin, int *XgridMax, int *XgridInc) {
     gmin = *XgridMin;
     gmax = *XgridMax;
     ginc = *XgridInc;
-
   }
+  */
+    gmin = *XgridMin;
+    gmax = *XgridMax;
+    ginc = *XgridInc;
+
 
   for (ix = gmin + ginc; ix <= gmax; ix += ginc) {
 
@@ -577,8 +583,16 @@ void Graph(TkindDUT kind, bool isMove, bool isNPN, int Vcc, int Vce, int base, i
   }
 
   //i = TFT_WID * i / ADC_MAX;
-  int minAdc =  ((MinXGrid*1.0*R1/(R1+R2)*1.0)/AdcVref*1.0) * Adc_12V;
-  int maxAdc =  ((MaxXGrid*1.0*R1/(R1+R2)*1.0)/AdcVref*1.0) * Adc_12V;
+  int minAdc;
+  int maxAdc;
+  // dlf
+  if(kind == tkZenerDiode) {
+    minAdc =  ((MinXGrid*1.0*ZENER_R1/(ZENER_R1+ZENER_R2)*1.0)/AdcVref*1.0) * Adc_24V;
+    maxAdc =  ((MaxXGrid*1.0*ZENER_R1/(ZENER_R1+ZENER_R2)*1.0)/AdcVref*1.0) * Adc_24V;
+  } else {
+    minAdc =  ((MinXGrid*1.0*R1/(R1+R2)*1.0)/AdcVref*1.0) * Adc_12V;
+    maxAdc =  ((MaxXGrid*1.0*R1/(R1+R2)*1.0)/AdcVref*1.0) * Adc_12V;
+  }
 
   //dlf. Only plot if Vce falls within the current Xgrid min/max
   if(i<minAdc || i>maxAdc) {
@@ -589,13 +603,14 @@ void Graph(TkindDUT kind, bool isMove, bool isNPN, int Vcc, int Vce, int base, i
 
   int vcaInMilliVolts;
   if(kind == tkZenerDiode) {
-     vcaInMilliVolts = i * 1000 * ((ZENER_R2 + ZENER_R1) * AdcVref) / (Adc_24V * ZENER_R1); 
+     //vcaInMilliVolts = i * 1000 * ((ZENER_R2 + ZENER_R1) * AdcVref) / (Adc_24V * ZENER_R1); 
+     vcaInMilliVolts = i * 1000 * ((ZENER_R2 + ZENER_R1) * AdcVref) / Adc_24V / ZENER_R1; 
   } else {
      vcaInMilliVolts = i * 1000 * ((R2 + R1) * AdcVref) / Adc_12V / R1; 
   }
 
   //dlf. Scale vce to the display width.  minAdc/maxAdc/i all in adc units (0-1023)
-  i = TFT_WID * ((i-minAdc)*1.0/(maxAdc-minAdc)*1.0);
+    i = TFT_WID * ((i-minAdc)*1.0/(maxAdc-minAdc)*1.0);
 
   // dlf. Had cases where we were starting a -1 and caused illegal drawing coord which locked up the display code. 
   if(i < 0) {
@@ -1735,7 +1750,7 @@ bool ExecSetupMenu(char *str1, char *str2, char *str3, char *str4, int *amin, in
 //-------------------------------------------------------------------------
 
 bool ExecSetupMenuGrid(void) {
-  return ExecSetupMenu("  Grid Setup", "Min X-Axis ", "Max X-Axis", "Grid Inc", &MinXGrid, &MaxXGrid, 12, &valIncGrid);
+  return ExecSetupMenu("  Grid Setup", "Min X-Axis ", "Max X-Axis", "Grid Inc", &MinXGrid, &MaxXGrid, 24, &valIncGrid);
 }
 //-------------------------------------------------------------------------
 // ExecSetupMenuFET
