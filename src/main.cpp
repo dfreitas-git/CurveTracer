@@ -347,6 +347,7 @@ void TurnOffLoad(TkindDUT kind) {
     case tkNMOSFET:
     case tkPJFET:
     case tkNDiode:
+    case tkZenerDiode:
       SetDacBase(255, 0);
       SetDacVcc(0, 0);
       break;
